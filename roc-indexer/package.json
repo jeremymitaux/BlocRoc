@@ -1,0 +1,21 @@
+{
+  "name": "roc-indexer",
+  "version": "0.1.0",
+  "description": "SubQuery indexer for the BlocRoc blockchain",
+  "scripts": {
+    "build": "subql build",
+    "codegen": "subql codegen",
+    "start:docker": "docker-compose pull && docker-compose up --remove-orphans",
+    "dev": "subql-node-substrate -f . --db-schema=roc",
+    "test": "jest --passWithNoTests"
+  },
+  "dependencies": {
+    "@subql/types": "^3.0.0"
+  },
+  "devDependencies": {
+    "@subql/cli": "^4.0.0",
+    "@subql/testing": "^2.0.0",
+    "typescript": "^5.0.0",
+    "jest": "^29"
+  }
+}

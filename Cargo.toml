@@ -1,0 +1,89 @@
+[workspace]
+resolver = "2"
+
+members = [
+    "roc-chain/node",
+    "roc-chain/runtime",
+    "roc-chain/pallets/ticket",
+    "roc-chain/pallets/event",
+    "roc-chain/pallets/marketplace",
+    "roc-chain/pallets/scanner",
+]
+
+[workspace.package]
+version = "0.1.0"
+authors = ["BlocRoc Team"]
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/blocroc/blocroc"
+
+# Shared dependency versions — update here to bump across all crates.
+[workspace.dependencies]
+# Polkadot SDK (Substrate + FRAME)
+frame-benchmarking = { version = "38.0.0", default-features = false }
+frame-executive = { version = "38.0.0", default-features = false }
+frame-support = { version = "38.0.0", default-features = false }
+frame-system = { version = "38.0.0", default-features = false }
+frame-system-benchmarking = { version = "38.0.0", default-features = false }
+frame-system-rpc-runtime-api = { version = "34.0.0", default-features = false }
+frame-try-runtime = { version = "0.44.0", default-features = false }
+pallet-aura = { version = "37.0.0", default-features = false }
+pallet-balances = { version = "39.0.0", default-features = false }
+pallet-grandpa = { version = "38.0.0", default-features = false }
+pallet-sudo = { version = "38.0.0", default-features = false }
+pallet-timestamp = { version = "37.0.0", default-features = false }
+pallet-transaction-payment = { version = "38.0.0", default-features = false }
+pallet-transaction-payment-rpc-runtime-api = { version = "38.0.0", default-features = false }
+
+sp-api = { version = "34.0.0", default-features = false }
+sp-block-builder = { version = "34.0.0", default-features = false }
+sp-consensus-aura = { version = "0.40.0", default-features = false }
+sp-consensus-grandpa = { version = "21.0.0", default-features = false }
+sp-core = { version = "34.0.0", default-features = false }
+sp-genesis-config = { version = "0.10.0", default-features = false }
+sp-inherents = { version = "34.0.0", default-features = false }
+sp-io = { version = "38.0.0", default-features = false }
+sp-offchain = { version = "34.0.0", default-features = false }
+sp-runtime = { version = "39.0.0", default-features = false }
+sp-session = { version = "35.0.0", default-features = false }
+sp-std = { version = "14.0.0", default-features = false }
+sp-storage = { version = "21.0.0", default-features = false }
+sp-transaction-pool = { version = "34.0.0", default-features = false }
+sp-version = { version = "37.0.0", default-features = false }
+
+# Node-side (std only)
+sc-cli = { version = "0.46.0" }
+sc-client-api = { version = "37.0.0" }
+sc-consensus = { version = "0.44.0" }
+sc-consensus-aura = { version = "0.45.0" }
+sc-consensus-grandpa = { version = "0.30.0" }
+sc-executor = { version = "0.40.0" }
+sc-network = { version = "0.45.0" }
+sc-offchain = { version = "38.0.0" }
+sc-rpc-api = { version = "0.44.0" }
+sc-service = { version = "0.45.0" }
+sc-telemetry = { version = "25.0.0" }
+sc-transaction-pool = { version = "37.0.0" }
+sc-transaction-pool-api = { version = "37.0.0" }
+substrate-frame-rpc-system = { version = "38.0.0" }
+
+# General
+codec = { package = "parity-scale-codec", version = "3.6.12", default-features = false, features = ["derive"] }
+scale-info = { version = "2.11.1", default-features = false, features = ["derive"] }
+clap = { version = "4.5", features = ["derive"] }
+jsonrpsee = { version = "0.24", features = ["server"] }
+futures = { version = "0.3" }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = { version = "1.0" }
+
+[profile.release]
+panic = "unwind"
+
+[profile.production]
+inherits = "release"
+lto = true
+codegen-units = 1
+
+# Speed up compilation for dev builds
+[profile.dev.package."*"]
+opt-level = 3

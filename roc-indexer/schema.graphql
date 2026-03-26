@@ -1,0 +1,54 @@
+# BlocRoc SubQuery GraphQL Schema
+# Run `subql codegen` to generate TypeScript types from this schema.
+
+type RocEvent @entity {
+  id: ID!                    # event_id (string)
+  organizer: String!         # AccountId (SS58)
+  capacity: Int!
+  sold: Int!
+  metadataCid: String!       # IPFS CID
+  cancelled: Boolean!
+  createdAtBlock: BigInt!
+  createdAt: Date!
+}
+
+type Ticket @entity {
+  id: ID!                    # ticket_id (string)
+  eventId: String!
+  owner: String!             # current owner AccountId (SS58)
+  used: Boolean!
+  mintedAtBlock: BigInt!
+  mintedAt: Date!
+  usedAtBlock: BigInt
+  burned: Boolean!
+}
+
+type TicketTransfer @entity {
+  id: ID!                    # "<block>-<extrinsic_index>"
+  ticketId: String!
+  from: String!
+  to: String!
+  blockNumber: BigInt!
+  timestamp: Date!
+}
+
+type Listing @entity {
+  id: ID!                    # listing_id (string)
+  ticketId: String!
+  seller: String!
+  price: BigInt!
+  active: Boolean!
+  listedAtBlock: BigInt!
+  listedAt: Date!
+  resolvedAtBlock: BigInt
+  buyer: String              # populated when purchased
+}
+
+type ScanRecord @entity {
+  id: ID!                    # ticket_id (string) — one record per ticket
+  ticketId: String!
+  eventId: String!
+  scanner: String!
+  blockNumber: BigInt!
+  timestamp: Date!
+}

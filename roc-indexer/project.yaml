@@ -1,0 +1,91 @@
+specVersion: 1.0.0
+name: roc-indexer
+version: 0.1.0
+runner:
+  node:
+    name: "@subql/node-substrate"
+    version: ">=3.0.0"
+  query:
+    name: "@subql/query"
+    version: "*"
+
+description: >
+  SubQuery indexer for BlocRoc — indexes ticket lifecycle events,
+  event creation/cancellation, marketplace listings and sales, and
+  scanner validation records for off-chain querying.
+
+repository: https://github.com/blocroc/blocroc
+
+schema:
+  file: ./schema.graphql
+
+network:
+  chainId: "0x0000000000000000000000000000000000000000000000000000000000000000"
+  # Replace chainId with the actual genesis hash of the roc-chain node.
+  endpoint:
+    - ws://localhost:9944
+  dictionary: ""
+
+dataSources:
+  - kind: substrate/Runtime
+    startBlock: 1
+    mapping:
+      file: ./dist/index.js
+      handlers:
+        # Ticket pallet events
+        - handler: handleTicketMinted
+          kind: substrate/EventHandler
+          filter:
+            module: ticket
+            method: TicketMinted
+        - handler: handleTicketTransferred
+          kind: substrate/EventHandler
+          filter:
+            module: ticket
+            method: TicketTransferred
+        - handler: handleTicketBurned
+          kind: substrate/EventHandler
+          filter:
+            module: ticket
+            method: TicketBurned
+        - handler: handleTicketInvalidated
+          kind: substrate/EventHandler
+          filter:
+            module: ticket
+            method: TicketInvalidated
+
+        # Event pallet events
+        - handler: handleEventCreated
+          kind: substrate/EventHandler
+          filter:
+            module: event
+            method: EventCreated
+        - handler: handleEventCancelled
+          kind: substrate/EventHandler
+          filter:
+            module: event
+            method: EventCancelled
+
+        # Marketplace pallet events
+        - handler: handleTicketListed
+          kind: substrate/EventHandler
+          filter:
+            module: marketplace
+            method: TicketListed
+        - handler: handleListingCancelled
+          kind: substrate/EventHandler
+          filter:
+            module: marketplace
+            method: ListingCancelled
+        - handler: handleTicketPurchased
+          kind: substrate/EventHandler
+          filter:
+            module: marketplace
+            method: TicketPurchased
+
+        # Scanner pallet events
+        - handler: handleEntryValidated
+          kind: substrate/EventHandler
+          filter:
+            module: scanner
+            method: EntryValidated
