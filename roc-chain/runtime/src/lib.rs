@@ -13,7 +13,6 @@ include!(concat!(env!("OUT_DIR"), "/wasm_binary.rs"));
 use codec::{Decode, Encode};
 use frame_support::{
     construct_runtime, derive_impl,
-    genesis_builder_helper::{build_state, get_preset},
     parameter_types,
     traits::{ConstBool, ConstU128, ConstU32, ConstU64, ConstU8},
     weights::{
@@ -33,6 +32,7 @@ use sp_runtime::{
     transaction_validity::{TransactionSource, TransactionValidity},
     ApplyExtrinsicResult, MultiSignature,
 };
+use sp_genesis_builder::{self, PresetId};
 use sp_std::prelude::*;
 #[cfg(feature = "std")]
 use sp_version::NativeVersion;
@@ -204,6 +204,8 @@ impl pallet_sudo::Config for Runtime {
 
 impl pallet_ticket::Config for Runtime {
     type RuntimeEvent = RuntimeEvent;
+    type Currency = Balances;
+    type MaxStringLength = ConstU32<128>;
     type WeightInfo = pallet_ticket::weights::SubstrateWeight<Runtime>;
 }
 
@@ -357,8 +359,12 @@ impl_runtime_apis! {
     }
 
     impl sp_genesis_builder::GenesisBuilder<Block> for Runtime {
-        fn build_state(config: Vec<u8>) -> sp_genesis_builder::Result { build_state::<RuntimeGenesisConfig>(config) }
-        fn get_preset(id: &Option<sp_genesis_builder::PresetId>) -> Option<Vec<u8>> { get_preset::<RuntimeGenesisConfig>(id, |_| None) }
-        fn preset_names() -> Vec<sp_genesis_builder::PresetId> { vec![] }
+        fn build_state(config: Vec<u8>) -> sp_genesis_builder::Result {
+            sp_genesis_builder::build_state::<RuntimeGenesisConfig>(config)
+        }
+        fn get_preset(id: &Option<PresetId>) -> Option<Vec<u8>> {
+            sp_genesis_builder::get_preset::<RuntimeGenesisConfig>(id, |_| None)
+        }
+        fn preset_names() -> Vec<PresetId> { vec![] }
     }
 }
