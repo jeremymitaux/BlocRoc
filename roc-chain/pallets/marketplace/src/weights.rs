@@ -1,6 +1,6 @@
 //! Placeholder weights for `pallet_marketplace`. Replace with benchmarked values before mainnet.
 
-use frame_support::weights::Weight;
+use frame_support::{traits::Get, weights::Weight};
 
 pub trait WeightInfo {
     fn list() -> Weight;

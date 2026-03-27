@@ -1,5 +1,6 @@
 //! Placeholder weights for `pallet_scanner`. Replace with benchmarked values before mainnet.
 
+use frame_support::traits::Get;
 use frame_support::weights::Weight;
 
 pub trait WeightInfo {

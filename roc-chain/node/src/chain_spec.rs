@@ -66,6 +66,39 @@ pub fn local_testnet_config() -> Result<ChainSpec, String> {
     .build())
 }
 
+/// BlocRoc 4-validator testnet — named after iconic music venues.
+///
+/// Validators:
+/// - The Roxy        (alice keys)
+/// - Red Rocks       (bob keys)
+/// - House of Blues   (charlie keys)
+/// - Local Dive Bar   (dave keys)
+///
+/// All six well-known dev accounts are endowed so integration tests
+/// can submit extrinsics without funding first.
+pub fn blocroc_testnet_config() -> Result<ChainSpec, String> {
+    Ok(ChainSpec::builder(
+        WASM_BINARY.ok_or_else(|| "Development WASM not available".to_string())?,
+        None,
+    )
+    .with_name("BlocRoc Testnet")
+    .with_id("blocroc_testnet")
+    .with_chain_type(ChainType::Local)
+    .with_genesis_config_patch(testnet_genesis(
+        vec![
+            authority_keys_from_seed("Alice"),   // The Roxy
+            authority_keys_from_seed("Bob"),      // Red Rocks
+            authority_keys_from_seed("Charlie"),  // House of Blues
+            authority_keys_from_seed("Dave"),     // Local Dive Bar
+        ],
+        vec![],
+        get_account_id_from_seed::<sr25519::Public>("Alice"),
+        None,
+    ))
+    .with_protocol_id("blocroc")
+    .build())
+}
+
 fn testnet_genesis(
     initial_authorities: Vec<(AuraId, GrandpaId)>,
     _initial_nominators: Vec<AccountId>,

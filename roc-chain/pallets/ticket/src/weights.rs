@@ -10,7 +10,7 @@
 //!   --output roc-chain/pallets/ticket/src/weights.rs
 //! ```
 
-use frame_support::weights::Weight;
+use frame_support::{traits::Get, weights::Weight};
 
 /// Weight functions for each dispatchable in `pallet_ticket`.
 /// Methods are named after the extrinsics that will be added in the next prompt.

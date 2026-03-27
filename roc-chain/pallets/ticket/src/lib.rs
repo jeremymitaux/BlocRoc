@@ -24,9 +24,15 @@
 //!
 //! ## Extrinsics
 //!
-//! Extrinsic logic (create_event, mint_tickets, purchase_ticket, transfer_ticket,
-//! validate_ticket) will be added in the next prompt. This module contains only
-//! data structures, storage, events, and errors.
+//! ## Extrinsics
+//!
+//! Five dispatchable calls:
+//!
+//! 1. **`create_event`** — organiser creates an event, stores `EventDetails`.
+//! 2. **`mint_tickets`** — event creator mints a batch of tickets (up to remaining capacity).
+//! 3. **`purchase_ticket`** — buyer pays the creator the ticket price, ownership transfers.
+//! 4. **`transfer_ticket`** — secondary market transfer with resale-cap enforcement.
+//! 5. **`validate_ticket`** — scanner marks a ticket as used for venue entry.
 
 #![cfg_attr(not(feature = "std"), no_std)]
 
@@ -54,9 +60,11 @@ pub mod pallet {
     use crate::weights::WeightInfo;
     use frame_support::{
         pallet_prelude::*,
-        traits::Currency,
+        traits::{Currency, ExistenceRequirement},
     };
     use frame_system::pallet_prelude::*;
+    use sp_runtime::traits::Zero;
+    use sp_runtime::SaturatedConversion;
 
     /// Shorthand for the balance type derived from the pallet's `Currency`
     /// associated type. Avoids repeating the long path everywhere.
@@ -352,5 +360,269 @@ pub mod pallet {
         /// Resale cap arithmetic overflowed. Occurs if `original_price *
         /// resale_cap_percent` overflows the Balance type.
         ResaleCapArithmetic,
+    }
+
+    // ── Dispatchables ────────────────────────────────────────────────────────
+
+    #[pallet::call]
+    impl<T: Config> Pallet<T> {
+        /// Create a new event.
+        ///
+        /// Any signed account can be an organiser. Stores an `EventDetails`
+        /// record, increments `NextEventId`, and emits `EventCreated`.
+        #[pallet::call_index(0)]
+        #[pallet::weight(T::WeightInfo::create_event())]
+        pub fn create_event(
+            origin: OriginFor<T>,
+            name: BoundedVec<u8, T::MaxStringLength>,
+            venue_name: BoundedVec<u8, T::MaxStringLength>,
+            date: u64,
+            capacity: u32,
+            ticket_price: BalanceOf<T>,
+            resale_cap_percent: u8,
+        ) -> DispatchResult {
+            let creator = ensure_signed(origin)?;
+
+            let event_id = NextEventId::<T>::get();
+            let next_id = event_id.checked_add(1).ok_or(Error::<T>::EventIdOverflow)?;
+
+            let event = EventDetails {
+                name: name.clone(),
+                venue_name,
+                date,
+                capacity,
+                ticket_price,
+                resale_cap_percent,
+                tickets_sold: 0,
+                creator: creator.clone(),
+                is_active: true,
+            };
+
+            Events::<T>::insert(event_id, event);
+            NextEventId::<T>::put(next_id);
+
+            Self::deposit_event(Event::EventCreated { event_id, creator, name });
+            Ok(())
+        }
+
+        /// Mint a batch of tickets for an event.
+        ///
+        /// Only the event creator may call this. `count` tickets are created
+        /// with contiguous IDs starting from `NextTicketId`. Tickets are
+        /// initially owned by the creator (primary inventory). The event's
+        /// `tickets_sold` is **not** incremented here — it is incremented when
+        /// a fan calls `purchase_ticket`.
+        ///
+        /// Constraints:
+        /// - Event must exist and be active.
+        /// - `tickets_sold + count <= capacity` (cannot mint beyond capacity).
+        #[pallet::call_index(1)]
+        #[pallet::weight(T::WeightInfo::mint_tickets(*count))]
+        pub fn mint_tickets(
+            origin: OriginFor<T>,
+            event_id: EventId,
+            count: u32,
+        ) -> DispatchResult {
+            let caller = ensure_signed(origin)?;
+
+            let event = Events::<T>::get(event_id).ok_or(Error::<T>::EventNotFound)?;
+            ensure!(event.is_active, Error::<T>::EventNotActive);
+            ensure!(event.creator == caller, Error::<T>::NotEventCreator);
+
+            let remaining = event
+                .capacity
+                .checked_sub(event.tickets_sold)
+                .unwrap_or(0);
+            ensure!(count <= remaining, Error::<T>::EventSoldOut);
+
+            let start_id = NextTicketId::<T>::get();
+            let end_id = start_id
+                .checked_add(count as u64)
+                .ok_or(Error::<T>::TicketIdOverflow)?;
+
+            for ticket_id in start_id..end_id {
+                let ticket = TicketDetails {
+                    event_id,
+                    tier: BoundedVec::default(),
+                    seat: None,
+                    original_price: event.ticket_price,
+                    current_price: event.ticket_price,
+                    owner: caller.clone(),
+                    is_used: false,
+                    is_listed_for_resale: false,
+                };
+
+                Tickets::<T>::insert(ticket_id, ticket);
+                TicketsByOwner::<T>::insert(&caller, ticket_id, ());
+                TicketsByEvent::<T>::insert(event_id, ticket_id, ());
+            }
+
+            NextTicketId::<T>::put(end_id);
+
+            Self::deposit_event(Event::TicketsMinted { event_id, count, start_id });
+            Ok(())
+        }
+
+        /// Purchase a ticket from the primary sale.
+        ///
+        /// The buyer pays `ticket_price` to the event creator. Ownership
+        /// transfers from the creator to the buyer, and `tickets_sold` on the
+        /// event is incremented.
+        ///
+        /// Constraints:
+        /// - Ticket must exist and not already be used.
+        /// - The event must be active.
+        /// - The current owner must be the event creator (primary sale only;
+        ///   use `transfer_ticket` for secondary market).
+        /// - The buyer must have enough balance to pay `ticket_price`.
+        #[pallet::call_index(2)]
+        #[pallet::weight(T::WeightInfo::purchase_ticket())]
+        pub fn purchase_ticket(
+            origin: OriginFor<T>,
+            ticket_id: TicketId,
+        ) -> DispatchResult {
+            let buyer = ensure_signed(origin)?;
+
+            Tickets::<T>::try_mutate(ticket_id, |maybe_ticket| -> DispatchResult {
+                let ticket = maybe_ticket.as_mut().ok_or(Error::<T>::TicketNotFound)?;
+                ensure!(!ticket.is_used, Error::<T>::TicketAlreadyUsed);
+
+                let event = Events::<T>::get(ticket.event_id)
+                    .ok_or(Error::<T>::EventNotFound)?;
+                ensure!(event.is_active, Error::<T>::EventNotActive);
+                ensure!(ticket.owner == event.creator, Error::<T>::NotEventCreator);
+
+                // Transfer ticket_price from buyer to creator.
+                T::Currency::transfer(
+                    &buyer,
+                    &event.creator,
+                    event.ticket_price,
+                    ExistenceRequirement::KeepAlive,
+                )
+                .map_err(|_| Error::<T>::InsufficientFunds)?;
+
+                // Update reverse indexes.
+                TicketsByOwner::<T>::remove(&ticket.owner, ticket_id);
+                TicketsByOwner::<T>::insert(&buyer, ticket_id, ());
+
+                // Update ticket ownership.
+                let price = event.ticket_price;
+                ticket.owner = buyer.clone();
+
+                // Increment tickets_sold on the event.
+                Events::<T>::try_mutate(ticket.event_id, |maybe_event| -> DispatchResult {
+                    let evt = maybe_event.as_mut().ok_or(Error::<T>::EventNotFound)?;
+                    evt.tickets_sold = evt
+                        .tickets_sold
+                        .checked_add(1)
+                        .ok_or(Error::<T>::TicketsSoldOverflow)?;
+                    Ok(())
+                })?;
+
+                Self::deposit_event(Event::TicketPurchased {
+                    ticket_id,
+                    buyer,
+                    price,
+                });
+
+                Ok(())
+            })
+        }
+
+        /// Transfer a ticket on the secondary market.
+        ///
+        /// The caller must be the current ticket owner. If `price > 0`, funds
+        /// are transferred from `to` to the caller. The price is checked
+        /// against the event's resale cap: it must satisfy
+        /// `price <= original_price * resale_cap_percent / 100`.
+        ///
+        /// A failed transfer (ticket used, resale cap exceeded, event not
+        /// active) returns a `DispatchError` so the extrinsic is reverted.
+        #[pallet::call_index(3)]
+        #[pallet::weight(T::WeightInfo::transfer_ticket())]
+        pub fn transfer_ticket(
+            origin: OriginFor<T>,
+            ticket_id: TicketId,
+            to: T::AccountId,
+            price: BalanceOf<T>,
+        ) -> DispatchResult {
+            let caller = ensure_signed(origin)?;
+
+            Tickets::<T>::try_mutate(ticket_id, |maybe_ticket| -> DispatchResult {
+                let ticket = maybe_ticket.as_mut().ok_or(Error::<T>::TicketNotFound)?;
+                ensure!(ticket.owner == caller, Error::<T>::NotTicketOwner);
+                ensure!(!ticket.is_used, Error::<T>::TicketAlreadyUsed);
+
+                let event = Events::<T>::get(ticket.event_id)
+                    .ok_or(Error::<T>::EventNotFound)?;
+                ensure!(event.is_active, Error::<T>::EventNotActive);
+
+                // Enforce resale cap: price ≤ original_price × cap% / 100.
+                // We do the arithmetic in u128 to avoid needing From<u64> on BalanceOf<T>.
+                if !price.is_zero() {
+                    let orig_u128: u128 = ticket.original_price.saturated_into();
+                    let max_u128 = orig_u128
+                        .checked_mul(event.resale_cap_percent as u128)
+                        .ok_or(Error::<T>::ResaleCapArithmetic)?
+                        / 100u128;
+                    let price_u128: u128 = price.saturated_into();
+                    ensure!(price_u128 <= max_u128, Error::<T>::ResaleCapExceeded);
+
+                    // Transfer funds from buyer to seller.
+                    T::Currency::transfer(
+                        &to,
+                        &caller,
+                        price,
+                        ExistenceRequirement::KeepAlive,
+                    )
+                    .map_err(|_| Error::<T>::InsufficientFunds)?;
+                }
+
+                // Update reverse indexes.
+                TicketsByOwner::<T>::remove(&caller, ticket_id);
+                TicketsByOwner::<T>::insert(&to, ticket_id, ());
+
+                // Update ticket record.
+                ticket.owner = to.clone();
+                ticket.current_price = price;
+                ticket.is_listed_for_resale = false;
+
+                Self::deposit_event(Event::TicketTransferred {
+                    ticket_id,
+                    from: caller,
+                    to,
+                    price,
+                });
+
+                Ok(())
+            })
+        }
+
+        /// Validate a ticket for venue entry.
+        ///
+        /// Any signed account can call this (in production, restrict via an
+        /// `EnsureOrigin` or couple with the scanner pallet). Sets `is_used`
+        /// to `true`, which is permanent — the ticket can never be transferred
+        /// or validated again.
+        #[pallet::call_index(4)]
+        #[pallet::weight(T::WeightInfo::validate_ticket())]
+        pub fn validate_ticket(
+            origin: OriginFor<T>,
+            ticket_id: TicketId,
+        ) -> DispatchResult {
+            ensure_signed(origin)?;
+
+            Tickets::<T>::try_mutate(ticket_id, |maybe_ticket| -> DispatchResult {
+                let ticket = maybe_ticket.as_mut().ok_or(Error::<T>::TicketNotFound)?;
+                ensure!(!ticket.is_used, Error::<T>::TicketAlreadyUsed);
+
+                let event_id = ticket.event_id;
+                ticket.is_used = true;
+                ticket.is_listed_for_resale = false;
+
+                Self::deposit_event(Event::TicketValidated { ticket_id, event_id });
+                Ok(())
+            })
+        }
     }
 }
