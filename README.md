@@ -28,6 +28,7 @@ blocroc/
 ## Key Features
 
 - **On-chain tickets** — Each ticket is a unique on-chain asset owned by the purchaser's wallet
+- **Venues as Vallidators** - To be a vallidator and operate a node, an entity must be an operating music venue
 - **Trustless transfers** — Fans can resell tickets P2P without a platform intermediary
 - **Controlled secondary market** — Organizers can cap resale price and take a royalty cut
 - **Mobile validation** — Venue staff scan QR codes; validity is verified on-chain in real time
